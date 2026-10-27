@@ -1,0 +1,281 @@
+import Link from "next/link"
+import { notFound } from "next/navigation"
+import { Suspense } from "react"
+import { CourseCover } from "@/components/course-cover"
+import { Curriculum } from "@/components/curriculum"
+import { AwardIcon, CheckIcon, ClockIcon, LayersIcon, ChartIcon, GlobeIcon, TargetIcon } from "@/components/icons"
+import { LogoMark } from "@/components/site-header"
+import { ProgressBar } from "@/components/progress-bar"
+import { getCurrentUser } from "@/lib/auth"
+import {
+  courseCompletion,
+  getCourseBySlug,
+  getMyCourseProgress,
+  getMyEnrollment,
+  resumeHref,
+  type CourseDetail,
+  type LessonProgress,
+} from "@/lib/data"
+import { LEVEL_LABEL, formatDuration, plural } from "@/lib/format"
+import { EnrollButton } from "./enroll-button"
+
+export default function CoursePage({ params }: PageProps<"/courses/[slug]">) {
+  return (
+    <Suspense fallback={<CourseSkeleton />}>
+      <CourseView slug={params.then((p) => p.slug)} />
+    </Suspense>
+  )
+}
+
+function CourseSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <div className="bg-brand-50">
+        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
+          <div className="skeleton h-4 w-40" />
+          <div className="skeleton mt-6 h-12 w-2/3" />
+          <div className="skeleton mt-4 h-5 w-1/2" />
+          <div className="skeleton mt-8 h-14 w-56" />
+        </div>
+      </div>
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="skeleton -mt-8 h-28" />
+      </div>
+    </div>
+  )
+}
+
+const LEVEL_NOTE = {
+  beginner: "No prior experience required",
+  intermediate: "Some related experience helps",
+  advanced: "Solid background recommended",
+} as const
+
+async function CourseView({ slug: slugPromise }: { slug: Promise<string> }) {
+  const slug = await slugPromise
+  const [course, user] = await Promise.all([getCourseBySlug(slug), getCurrentUser()])
+  if (!course) notFound()
+
+  const enrollment = user ? await getMyEnrollment(course.id, user.id) : null
+  const progress = enrollment && user ? await getMyCourseProgress(course.id, user.id) : undefined
+  const completion = progress ? courseCompletion(course, progress) : null
+
+  return (
+    <>
+      <title>{`${course.title} | Veyro`}</title>
+
+      <section className="relative overflow-hidden bg-gradient-to-br from-brand-50 via-soft to-canvas">
+        <div aria-hidden="true" className="absolute -right-24 -top-24 hidden h-96 w-96 rounded-full bg-brand-100 lg:block" />
+        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 pb-20 pt-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-center">
+          <div>
+            <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm">
+              <Link href="/courses" className="text-brand hover:underline">
+                Browse
+              </Link>
+              {course.category && (
+                <>
+                  <span aria-hidden="true" className="text-muted">
+                    ›
+                  </span>
+                  <Link href={`/courses?category=${course.category.slug}`} className="text-brand hover:underline">
+                    {course.category.name}
+                  </Link>
+                </>
+              )}
+            </nav>
+            <p className="mt-6 flex items-center gap-2 font-semibold">
+              <LogoMark className="h-6 w-6" />
+              {course.instructorName}
+            </p>
+            <h1 className="h-display mt-3 max-w-[20ch]">{course.title}</h1>
+            {course.subtitle && <p className="mt-4 max-w-[60ch] text-lg leading-relaxed text-[#3d4452]">{course.subtitle}</p>}
+            <p className="mt-4">
+              Instructor:{" "}
+              <a href="#instructor" className="font-semibold text-brand underline-offset-2 hover:underline">
+                {course.instructorName}
+              </a>
+            </p>
+
+            <div className="mt-7 max-w-md">
+              <CourseCta course={course} user={Boolean(user)} enrollment={enrollment} completion={completion} progress={progress} />
+            </div>
+          </div>
+
+          <div className="relative hidden lg:block" aria-hidden="true">
+            <div className="overflow-hidden rounded-xl border-4 border-white shadow-[0_30px_60px_-20px_rgb(14_27_51/0.45)] ring-1 ring-accent/40">
+              <div className="aspect-[4/3]">
+                <CourseCover motif={course.coverMotif} tone={course.coverTone} seed={course.slug} rounded={false} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+        <dl className="card relative -mt-12 grid gap-6 p-6 shadow-[0_20px_44px_-24px_rgb(14_27_51/0.3)] sm:grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-line">
+          <InfoItem icon={LayersIcon} title={plural(course.modules.length, "module")} note="Gain insight into a topic and learn the fundamentals" />
+          <InfoItem icon={ChartIcon} title={`${LEVEL_LABEL[course.level]} level`} note={LEVEL_NOTE[course.level]} />
+          <InfoItem icon={ClockIcon} title={`${formatDuration(course.durationSec)} to complete`} note="Short lessons you can fit into any day" />
+          <InfoItem icon={GlobeIcon} title="Flexible schedule" note="Learn at your own pace — progress is saved" />
+        </dl>
+
+        <nav aria-label="Course sections" className="mt-8 flex gap-6 overflow-x-auto border-b border-line">
+          {[
+            ["#about", "About"],
+            ["#outcomes", "Outcomes"],
+            ["#modules", "Modules"],
+            ["#instructor", "Instructor"],
+          ].map(([href, label], i) => (
+            <a
+              key={href}
+              href={href}
+              className={`-mb-px shrink-0 border-b-2 px-1 pb-3 font-semibold ${
+                i === 0 ? "border-brand text-brand" : "border-transparent text-muted hover:text-ink"
+              }`}
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+
+        <div className="max-w-4xl">
+          <section id="about" className="scroll-mt-32 pt-10">
+            <h2 className="h-section">What you&rsquo;ll learn</h2>
+            {course.outcomes.length > 0 && (
+              <ul className="card mt-5 grid gap-x-8 gap-y-4 p-6 sm:grid-cols-2">
+                {course.outcomes.map((o) => (
+                  <li key={o} className="flex gap-3 leading-relaxed">
+                    <CheckIcon className="mt-1 h-4 w-4 shrink-0 text-ink" />
+                    {o}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section id="outcomes" className="scroll-mt-32 pt-10">
+            <h2 className="text-xl font-semibold">Details to know</h2>
+            <dl className="mt-5 grid gap-6 sm:grid-cols-3">
+              <Detail icon={AwardIcon} title="Certificate of completion" note="Earned when you finish every class" />
+              <Detail icon={TargetIcon} title="Practice in every class" note="A hands-on exercise to apply what you learn" />
+              <Detail icon={GlobeIcon} title={`Taught in ${course.language}`} note="Self-paced, with progress saved" />
+            </dl>
+            <div className="prose-reading mt-8">
+              {course.description.split(/\n{2,}/).map((p, i) => (
+                <p key={i}>{p}</p>
+              ))}
+            </div>
+          </section>
+
+          <section id="modules" className="scroll-mt-32 pt-12">
+            <h2 className="h-section">There {course.modules.length === 1 ? "is 1 module" : `are ${course.modules.length} modules`} in this course</h2>
+            <div className="mt-6">
+              <Curriculum slug={course.slug} modules={course.modules} enrolled={Boolean(enrollment)} progress={progress} />
+            </div>
+          </section>
+
+          <section id="instructor" className="scroll-mt-32 pt-12">
+            <h2 className="h-section">Instructor</h2>
+            <div className="card mt-5 flex items-start gap-4 p-6">
+              <LogoMark className="h-14 w-14 shrink-0" />
+              <div>
+                <p className="text-lg font-semibold">{course.instructorName}</p>
+                {course.instructorHeadline && <p className="mt-1 text-muted">{course.instructorHeadline}</p>}
+                <p className="mt-2 text-sm text-muted">
+                  {plural(course.lessonCount, "lesson")} in this course, {formatDuration(course.durationSec)} in total
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {!enrollment && (
+            <section className="mt-12 rounded-xl bg-brand-50 p-6 sm:p-8">
+              <h2 className="text-xl font-semibold">Ready to start {course.title}?</h2>
+              <p className="mt-1 text-muted">Enroll for free and your progress is saved from the very first lesson.</p>
+              <div className="mt-5 max-w-xs">
+                <CourseCta course={course} user={Boolean(user)} enrollment={enrollment} completion={completion} progress={progress} compact />
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function InfoItem({ icon: Icon, title, note }: { icon: (p: { className?: string }) => React.ReactNode; title: string; note: string }) {
+  return (
+    <div className="flex gap-3 lg:px-6 lg:first:pl-0">
+      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-brand" />
+      <div>
+        <dt className="font-semibold">{title}</dt>
+        <dd className="mt-0.5 text-sm text-muted">{note}</dd>
+      </div>
+    </div>
+  )
+}
+
+function Detail({ icon: Icon, title, note }: { icon: (p: { className?: string }) => React.ReactNode; title: string; note: string }) {
+  return (
+    <div className="flex gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-soft">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div>
+        <dt className="font-semibold">{title}</dt>
+        <dd className="text-sm text-muted">{note}</dd>
+      </div>
+    </div>
+  )
+}
+
+function CourseCta({
+  course,
+  user,
+  enrollment,
+  completion,
+  progress,
+  compact = false,
+}: {
+  course: CourseDetail
+  user: boolean
+  enrollment: Awaited<ReturnType<typeof getMyEnrollment>>
+  completion: ReturnType<typeof courseCompletion> | null
+  progress: Map<string, LessonProgress> | undefined
+  compact?: boolean
+}) {
+  if (!enrollment) {
+    return (
+      <div>
+        {user ? (
+          <EnrollButton courseId={course.id} slug={course.slug} />
+        ) : (
+          <Link href={`/sign-up?next=${encodeURIComponent(`/courses/${course.slug}`)}`} className="btn btn-primary btn-lg w-full sm:w-auto">
+            Enroll for free
+            <span className="hidden text-sm font-normal text-white/85 sm:inline">Starts today</span>
+          </Link>
+        )}
+        {!compact && <p className="mt-3 text-sm text-muted">Free during early access. No payment needed.</p>}
+      </div>
+    )
+  }
+  if (!completion) return null
+  const pct = Math.round(completion.ratio * 100)
+  return (
+    <div className="card p-5">
+      <p className="font-semibold">
+        {enrollment.status === "completed" ? <span className="text-success">You completed this course</span> : "You're enrolled"}
+      </p>
+      <div className="mt-3 flex items-center gap-3">
+        <ProgressBar className="flex-1" done={completion.done} total={completion.total} />
+        <span className="text-sm text-muted">{pct}%</span>
+      </div>
+      <p className="mt-1.5 text-sm text-muted">
+        {completion.done} of {completion.total} items complete
+      </p>
+      <Link href={resumeHref(course.slug, course, enrollment.last_lesson_id, progress ?? new Map())} className="btn btn-primary mt-4 w-full">
+        {enrollment.status === "completed" ? "Review course" : completion.done ? "Resume learning" : "Go to course"}
+      </Link>
+    </div>
+  )
+}

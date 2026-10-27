@@ -1,0 +1,16 @@
+/* Home page: cream background.
+   The home page renders <span class="home-cream">; while it is on the page, the whole page
+   and the top bar use the hero's warm cream instead of white. Only the home page imports this file.
+   One solid colour on purpose: a gradient on the page background repeats every screen height
+   and leaves visible seams. */
+html:has(.home-cream),
+html body:has(.home-cream) {
+  background: #faf9f7;
+}
+html body:has(.home-cream) .site-header {
+  background-color: rgb(250 249 247 / 0.88);
+  border-bottom-color: #ebe6dd;
+}
+html body:has(.home-cream) .site-header #header-search {
+  background-color: rgb(255 255 255 / 0.7);
+}

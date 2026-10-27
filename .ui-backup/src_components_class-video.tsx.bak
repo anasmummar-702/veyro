@@ -1,0 +1,165 @@
+"use client"
+
+import Link from "next/link"
+import { useEffect, useRef, useState } from "react"
+import { loadYouTubeApi, YT_STATE, type YTPlayer } from "@/lib/youtube"
+
+type Stage = "cover" | "playing" | "ended" | "error"
+
+/**
+ * The video at the top of a class. Shows a Veyro cover until the learner presses
+ * play, then loads YouTube's privacy-enhanced player with suggestions, annotations
+ * and captions-by-default turned off. When the video ends the player is removed
+ * and replaced with Veyro's own panel, so learners aren't shown other videos.
+ */
+export function ClassVideo({
+  videoRef,
+  title,
+  moduleLabel,
+  nextHref,
+}: {
+  videoRef: string
+  title: string
+  moduleLabel: string
+  nextHref: string | null
+}) {
+  const [stage, setStage] = useState<Stage>("cover")
+  const [errorText, setErrorText] = useState("")
+  const mountRef = useRef<HTMLDivElement>(null)
+  const playerRef = useRef<YTPlayer | null>(null)
+
+  useEffect(() => {
+    if (stage !== "playing") return
+    let cancelled = false
+
+    loadYouTubeApi()
+      .then((YT) => {
+        if (cancelled || !mountRef.current) return
+        const el = document.createElement("div")
+        mountRef.current.replaceChildren(el)
+        playerRef.current = new YT.Player(el, {
+          videoId: videoRef,
+          host: "https://www.youtube-nocookie.com",
+          playerVars: {
+            autoplay: 1,
+            rel: 0, // only related videos from the same channel, and we replace the end screen anyway
+            playsinline: 1,
+            iv_load_policy: 3, // no annotations
+            cc_load_policy: 0,
+            fs: 1,
+            color: "white",
+            origin: window.location.origin,
+          },
+          events: {
+            onStateChange: (e) => {
+              if (e.data === YT_STATE.ENDED) {
+                playerRef.current?.destroy()
+                playerRef.current = null
+                setStage("ended")
+              }
+            },
+            onError: (e) => {
+              setErrorText(
+                e.data === 101 || e.data === 150 || e.data === 153
+                  ? "This video can't be played inside Veyro right now."
+                  : "This video isn't available right now.",
+              )
+              setStage("error")
+            },
+          },
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setErrorText("The video player couldn't load. Check your connection, or turn off any content blocker for this site.")
+        setStage("error")
+      })
+
+    return () => {
+      cancelled = true
+      playerRef.current?.destroy()
+      playerRef.current = null
+    }
+  }, [stage, videoRef])
+
+  return (
+    <div className="class-video relative aspect-video w-full overflow-hidden rounded-2xl bg-navy-deep shadow-[0_30px_60px_-30px_rgb(10_31_68/0.6)] ring-1 ring-navy/10">
+      {stage === "playing" && <div ref={mountRef} className="absolute inset-0 [&>iframe]:h-full [&>iframe]:w-full" />}
+
+      {stage === "cover" && (
+        <button
+          type="button"
+          onClick={() => setStage("playing")}
+          className="group absolute inset-0 flex h-full w-full flex-col justify-end text-left text-white"
+          aria-label={`Play video: ${title}`}
+        >
+          <Backdrop videoRef={videoRef} />
+          <span className="absolute left-1/2 top-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-brand shadow-[0_18px_40px_-10px_rgb(0_0_0/0.6)] ring-8 ring-white/15 transition-transform duration-200 group-hover:scale-105 sm:h-24 sm:w-24">
+            <svg viewBox="0 0 24 24" className="ml-1 h-8 w-8 sm:h-9 sm:w-9" aria-hidden="true">
+              <path d="M7 4.5v15l12.5-7.5z" fill="currentColor" />
+            </svg>
+          </span>
+          <span className="relative p-5 sm:p-7">
+            <span className="block text-xs font-bold uppercase tracking-[0.16em] text-white/70">{moduleLabel}</span>
+            <span className="font-display mt-1 block text-xl font-bold tracking-[-0.02em] sm:text-2xl">{title}</span>
+          </span>
+        </button>
+      )}
+
+      {stage === "ended" && (
+        <Panel videoRef={videoRef}>
+          <p className="font-display text-2xl font-bold tracking-[-0.02em]">Video complete</p>
+          <p className="mt-2 max-w-[42ch] text-white/75">Read the notes and try the exercise below, then mark the class as completed.</p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <button type="button" onClick={() => setStage("playing")} className="btn btn-ghost-light">
+              Watch again
+            </button>
+            {nextHref && (
+              <Link href={nextHref} className="btn btn-white">
+                Next class
+              </Link>
+            )}
+          </div>
+        </Panel>
+      )}
+
+      {stage === "error" && (
+        <Panel videoRef={videoRef}>
+          <p className="font-display text-xl font-bold tracking-[-0.02em]">Video unavailable</p>
+          <p className="mt-2 max-w-[44ch] text-white/75">{errorText} The class notes below cover everything you need.</p>
+          <button type="button" onClick={() => setStage("playing")} className="btn btn-ghost-light mt-6">
+            Try again
+          </button>
+        </Panel>
+      )}
+    </div>
+  )
+}
+
+/** Blurred still from the video under a navy wash, so the cover always looks like Veyro. */
+function Backdrop({ videoRef }: { videoRef: string }) {
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`https://i.ytimg.com/vi/${videoRef}/hqdefault.jpg`}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-md"
+        loading="lazy"
+        decoding="async"
+      />
+      <span aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-[#061633] via-[#0a1f44]/70 to-[#0a1f44]/35" />
+      <span aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(60%_60%_at_80%_10%,rgb(47_123_255/0.35),transparent_70%)]" />
+    </>
+  )
+}
+
+function Panel({ videoRef, children }: { videoRef: string; children: React.ReactNode }) {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white">
+      <Backdrop videoRef={videoRef} />
+      <div className="relative flex flex-col items-center">{children}</div>
+    </div>
+  )
+}
